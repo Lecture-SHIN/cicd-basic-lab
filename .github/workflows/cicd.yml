@@ -74,7 +74,8 @@ jobs:
         id: build-push
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |                                      # working-directory: cicd-basic-lab 적용
+        working-directory: cicd-basic-lab    # defaults와 동일하게 명시
+        run: |                                      
           SHORT_SHA="${{ github.sha }}"
           SHORT_SHA="${SHORT_SHA:0:7}"
           TAG="${{ github.run_number }}-${SHORT_SHA}"
