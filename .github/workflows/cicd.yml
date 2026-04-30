@@ -67,8 +67,10 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       # 6. Docker 빌드 + ECR Push
+      #    working-directory 스텝에서 GITHUB_OUTPUT에 직접 쓰면
+      #    Runner가 outputs를 정상 인식하지 못하는 문제 있음
+      #    → GITHUB_ENV로 다음 스텝에 전달 후 별도 스텝에서 GITHUB_OUTPUT에 저장
       - name: Build, tag and push image to ECR
-        id: build-push
         working-directory: cicd-basic-lab
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -78,6 +80,8 @@ jobs:
           TAG="${{ github.run_number }}-${SHORT_SHA}"
           IMAGE_URI="${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${TAG}"
 
+          echo "빌드 이미지: ${IMAGE_URI}"
+
           docker build \
             --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --build-arg GIT_SHA="${SHORT_SHA}" \
@@ -85,17 +89,17 @@ jobs:
 
           docker push ${IMAGE_URI}
 
-          # 절대경로 확인
-          echo "현재 디렉토리: $(pwd)"
-          echo "GITHUB_OUTPUT 절대경로: ${GITHUB_OUTPUT}"
-          echo "GITHUB_OUTPUT 파일 존재 여부: $(ls -la ${GITHUB_OUTPUT})"
+          # GITHUB_ENV로 저장 → 다음 스텝에서 사용
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${TAG}"       >> $GITHUB_ENV
 
-          echo "image-uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
-          echo "image-tag=${TAG}"       >> "${GITHUB_OUTPUT}"
-
-          echo "=== 저장 후 GITHUB_OUTPUT 내용 ==="
-          cat "${GITHUB_OUTPUT}"
-          
+      # 7. outputs 저장 (working-directory 없이 실행해야 GITHUB_OUTPUT 정상 동작)
+      - name: Export image outputs
+        id: build-push
+        run: |
+          echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "확인 - image-uri: ${IMAGE_URI}"
 
 
   cd:
