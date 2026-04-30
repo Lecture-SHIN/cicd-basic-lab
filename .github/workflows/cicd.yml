@@ -1,11 +1,3 @@
-# .github/workflows/cicd.yml
-# 
-# 단계별 발전 이력:
-#   SSH + Private Key (JAR 직접 배포)
-#   Docker Hub + docker run (컨테이너화)
-#   OIDC + SSM Send-Command (키 없는 인증)
-#   OIDC + ECR + ECS (현재, 서버리스 컨테이너)
-
 name: CI/CD — ECR + ECS
 
 on:
@@ -23,7 +15,7 @@ env:
   ECS_CLUSTER:    ${{ vars.ECS_CLUSTER }}
   ECS_SERVICE:    ${{ vars.ECS_SERVICE }}
   CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}
-  TASK_DEFINITION: cicd-basic-lab/.aws/task-definition.json
+  TASK_DEFINITION: .aws/task-definition.json
 
 jobs:
 
@@ -33,7 +25,6 @@ jobs:
 
     outputs:
       image-repo-tag: ${{ steps.build-push.outputs.image-repo-tag }}
-      image-tag:      ${{ steps.build-push.outputs.image-tag }}
 
     steps:
       - name: Checkout
@@ -71,27 +62,15 @@ jobs:
           TAG="${{ github.run_number }}-${SHORT_SHA}"
           IMAGE_URI="${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${TAG}"
 
-          echo "빌드 이미지: ${IMAGE_URI}"
-
-          docker build \
-            --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --build-arg GIT_SHA="${SHORT_SHA}" \
-            -t ${IMAGE_URI} .
-
+          docker build -t ${IMAGE_URI} .
           docker push ${IMAGE_URI}
 
           echo "IMAGE_TAG=${TAG}" >> $GITHUB_ENV
 
-      # .과 / 포함 값은 Job outputs 전달 불가
-      # image-repo-tag (mylab-backend:35-a1a2d96) 만 전달
-      # cd Job에서 ECR registry 주소를 조합하여 완성
       - name: Export image outputs
         id: build-push
         run: |
-          REPO_TAG="${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}"
-          echo "image-repo-tag=${REPO_TAG}" >> $GITHUB_OUTPUT
-          echo "image-tag=${IMAGE_TAG}"     >> $GITHUB_OUTPUT
-          echo "확인 - image-repo-tag: ${REPO_TAG}"
+          echo "image-repo-tag=${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
 
   cd:
@@ -114,11 +93,8 @@ jobs:
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           TASK_DEF_PATH=$(find $GITHUB_WORKSPACE -name "task-definition.json" | head -1)
-          echo "찾은 경로: ${TASK_DEF_PATH}"
           sed -i "s/ACCOUNT_ID/${ACCOUNT_ID}/g" ${TASK_DEF_PATH}
-          echo "Task Definition ACCOUNT_ID 치환 완료: ${ACCOUNT_ID}"
 
-      # ECR registry 주소 + image-repo-tag 조합으로 전체 URI 완성
       - name: Render new task definition with updated image
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
@@ -134,12 +110,3 @@ jobs:
           service:  ${{ env.ECS_SERVICE }}
           cluster:  ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
-
-      - name: Print deployment result
-        run: |
-          echo "=============================="
-          echo " 배포 완료"
-          echo " 이미지: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ needs.ci.outputs.image-repo-tag }}"
-          echo " 클러스터: ${{ env.ECS_CLUSTER }}"
-          echo " 서비스: ${{ env.ECS_SERVICE }}"
-          echo "=============================="
