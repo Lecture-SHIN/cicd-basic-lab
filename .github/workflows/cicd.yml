@@ -71,17 +71,14 @@ jobs:
 
       # 6. Docker 빌드 + ECR Push
       - name: Build, tag and push image to ECR
-        id: build-push
+        id: docker-build
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        working-directory: cicd-basic-lab    # defaults와 동일하게 명시
-        run: |                                      
+        run: |
           SHORT_SHA="${{ github.sha }}"
           SHORT_SHA="${SHORT_SHA:0:7}"
           TAG="${{ github.run_number }}-${SHORT_SHA}"
           IMAGE_URI="${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${TAG}"
-
-          echo "빌드 이미지: ${IMAGE_URI}"
 
           docker build \
             --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -90,9 +87,15 @@ jobs:
 
           docker push ${IMAGE_URI}
 
-          echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
-          echo "image-tag=${TAG}"       >> $GITHUB_OUTPUT
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${TAG}"       >> $GITHUB_ENV
 
+      - name: Set outputs
+        id: build-push
+        run: |
+          echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "확인 - image-uri: ${IMAGE_URI}"
 
   cd:
     name: CD — Deploy to ECS
