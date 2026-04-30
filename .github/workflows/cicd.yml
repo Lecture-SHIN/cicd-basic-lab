@@ -68,6 +68,7 @@ jobs:
 
       # 6. Docker 빌드 + ECR Push
       - name: Build, tag and push image to ECR
+        id: build-push
         working-directory: cicd-basic-lab
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -77,25 +78,23 @@ jobs:
           TAG="${{ github.run_number }}-${SHORT_SHA}"
           IMAGE_URI="${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${TAG}"
 
-          echo "빌드 이미지: ${IMAGE_URI}"
-
           docker build \
             --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --build-arg GIT_SHA="${SHORT_SHA}" \
             -t ${IMAGE_URI} .
 
           docker push ${IMAGE_URI}
-          
-          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
-          echo "IMAGE_TAG=${TAG}"       >> $GITHUB_ENV
 
-      # 7. outputs 저장 (working-directory 없이)
-      - name: Set image outputs
-        id: build-push
-        run: |
-          echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
-          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "확인 - image-uri: ${IMAGE_URI}"
+          # 절대경로 확인
+          echo "현재 디렉토리: $(pwd)"
+          echo "GITHUB_OUTPUT 절대경로: ${GITHUB_OUTPUT}"
+          echo "GITHUB_OUTPUT 파일 존재 여부: $(ls -la ${GITHUB_OUTPUT})"
+
+          echo "image-uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+          echo "image-tag=${TAG}"       >> "${GITHUB_OUTPUT}"
+
+          echo "=== 저장 후 GITHUB_OUTPUT 내용 ==="
+          cat "${GITHUB_OUTPUT}"
           
 
 
