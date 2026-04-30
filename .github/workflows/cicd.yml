@@ -97,7 +97,6 @@ jobs:
       - name: Export image outputs
         id: build-push
         run: |
-        run: |
           echo "image-uri<<EOF" >> $GITHUB_OUTPUT
           echo "${IMAGE_URI}"   >> $GITHUB_OUTPUT
           echo "EOF"            >> $GITHUB_OUTPUT
