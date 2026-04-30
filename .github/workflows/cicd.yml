@@ -86,10 +86,16 @@ jobs:
             -t ${IMAGE_URI} .
 
           docker push ${IMAGE_URI}
-
+          
+          # 저장
           echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
           echo "image-tag=${TAG}"       >> $GITHUB_OUTPUT
           echo "확인 - image-uri: ${IMAGE_URI}"
+          
+          # 저장 확인
+          echo "=== GITHUB_OUTPUT 내용 ==="
+          cat "${GITHUB_OUTPUT}"
+          
 
 
   cd:
