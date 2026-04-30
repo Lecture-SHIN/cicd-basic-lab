@@ -17,17 +17,13 @@ permissions:
   id-token: write
   contents: read
 
-defaults:
-  run:
-    working-directory: cicd-basic-lab    # run: 명령어 기본 경로 (uses: 에는 미적용)
-
 env:
   AWS_REGION: ap-northeast-2
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}    # mylab-backend
   ECS_CLUSTER:    ${{ vars.ECS_CLUSTER }}        # mylab-cluster
   ECS_SERVICE:    ${{ vars.ECS_SERVICE }}        # mylab-backend-service
   CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}     # mylab-backend
-  TASK_DEFINITION: cicd-basic-lab/.aws/task-definition.json    # 수정
+  TASK_DEFINITION: cicd-basic-lab/.aws/task-definition.json
 
 jobs:
 
@@ -54,7 +50,8 @@ jobs:
 
       # 3. Maven 빌드
       - name: Build with Maven
-        run: mvn clean package -DskipTests -B    # working-directory: cicd-basic-lab 적용
+        working-directory: cicd-basic-lab
+        run: mvn clean package -DskipTests -B
 
       # 4. OIDC 인증
       - name: Configure AWS credentials (OIDC)
@@ -71,7 +68,8 @@ jobs:
 
       # 6. Docker 빌드 + ECR Push
       - name: Build, tag and push image to ECR
-        id: docker-build
+        id: build-push
+        working-directory: cicd-basic-lab
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
@@ -80,6 +78,8 @@ jobs:
           TAG="${{ github.run_number }}-${SHORT_SHA}"
           IMAGE_URI="${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${TAG}"
 
+          echo "빌드 이미지: ${IMAGE_URI}"
+
           docker build \
             --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --build-arg GIT_SHA="${SHORT_SHA}" \
@@ -87,15 +87,10 @@ jobs:
 
           docker push ${IMAGE_URI}
 
-          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
-          echo "IMAGE_TAG=${TAG}"       >> $GITHUB_ENV
-
-      - name: Set outputs
-        id: build-push
-        run: |
           echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
-          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "image-tag=${TAG}"       >> $GITHUB_OUTPUT
           echo "확인 - image-uri: ${IMAGE_URI}"
+
 
   cd:
     name: CD — Deploy to ECS
@@ -103,7 +98,7 @@ jobs:
     needs: ci
 
     steps:
-      # 1. 코드 체크아웃 (task-definition.json 접근 필요)
+      # 1. 코드 체크아웃
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -116,8 +111,6 @@ jobs:
           role-session-name: GitHubActions-CD-${{ github.run_id }}
 
       # 3. Task Definition ACCOUNT_ID 치환
-      #    uses: 가 아닌 run: 이므로 working-directory 적용됨
-      #    단, TASK_DEFINITION은 git 루트 기준 경로이므로 $GITHUB_WORKSPACE 사용
       - name: Inject Account ID into task definition
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -127,12 +120,11 @@ jobs:
           echo "Task Definition ACCOUNT_ID 치환 완료: ${ACCOUNT_ID}"
 
       # 4. Task Definition 이미지 URI 교체
-      #    uses: 이므로 working-directory 미적용 → git 루트 기준 경로 사용
       - name: Render new task definition with updated image
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: ${{ env.TASK_DEFINITION }}    # git 루트 기준
+          task-definition: ${{ env.TASK_DEFINITION }}
           container-name:  ${{ env.CONTAINER_NAME }}
           image:           ${{ needs.ci.outputs.image-uri }}
 
