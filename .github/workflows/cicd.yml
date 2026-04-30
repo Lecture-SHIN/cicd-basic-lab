@@ -129,6 +129,11 @@ jobs:
           sed -i "s/ACCOUNT_ID/${ACCOUNT_ID}/g" ${TASK_DEF_PATH}
           echo "Task Definition ACCOUNT_ID 치환 완료: ${ACCOUNT_ID}"
 
+      - name: Debug ci outputs
+        run: |
+          echo "needs.ci.outputs.image-uri = ${{ needs.ci.outputs.image-uri }}"
+          echo "needs.ci.outputs.image-tag = ${{ needs.ci.outputs.image-tag }}"
+      
       # 4. Task Definition 이미지 URI 교체
       - name: Render new task definition with updated image
         id: task-def
