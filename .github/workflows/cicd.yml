@@ -32,8 +32,6 @@ jobs:
     runs-on: ubuntu-latest
 
     outputs:
-      image-uri:      ${{ steps.build-push.outputs.image-uri }}
-      image-registry: ${{ steps.build-push.outputs.image-registry }}
       image-repo-tag: ${{ steps.build-push.outputs.image-repo-tag }}
       image-tag:      ${{ steps.build-push.outputs.image-tag }}
 
@@ -82,27 +80,18 @@ jobs:
 
           docker push ${IMAGE_URI}
 
-          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
-          echo "IMAGE_TAG=${TAG}"       >> $GITHUB_ENV
+          echo "IMAGE_TAG=${TAG}" >> $GITHUB_ENV
 
+      # .과 / 포함 값은 Job outputs 전달 불가
+      # image-repo-tag (mylab-backend:35-a1a2d96) 만 전달
+      # cd Job에서 ECR registry 주소를 조합하여 완성
       - name: Export image outputs
         id: build-push
         run: |
-          REGISTRY=$(echo "${IMAGE_URI}" | cut -d'/' -f1)
-          REPO_TAG=$(echo "${IMAGE_URI}" | cut -d'/' -f2-)
-
-          echo "image-registry=${REGISTRY}" >> $GITHUB_OUTPUT
+          REPO_TAG="${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}"
           echo "image-repo-tag=${REPO_TAG}" >> $GITHUB_OUTPUT
           echo "image-tag=${IMAGE_TAG}"     >> $GITHUB_OUTPUT
-
-          echo "image-uri<<EOF" >> $GITHUB_OUTPUT
-          printf '%s' "${IMAGE_URI}" >> $GITHUB_OUTPUT
-          printf '\n' >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          echo "확인 - IMAGE_URI: ${IMAGE_URI}"
-          echo "확인 - REGISTRY: ${REGISTRY}"
-          echo "확인 - REPO_TAG: ${REPO_TAG}"
+          echo "확인 - image-repo-tag: ${REPO_TAG}"
 
 
   cd:
@@ -129,20 +118,14 @@ jobs:
           sed -i "s/ACCOUNT_ID/${ACCOUNT_ID}/g" ${TASK_DEF_PATH}
           echo "Task Definition ACCOUNT_ID 치환 완료: ${ACCOUNT_ID}"
 
-      - name: Debug ci outputs
-        run: |
-          echo "image-uri      = ${{ needs.ci.outputs.image-uri }}"
-          echo "image-registry = ${{ needs.ci.outputs.image-registry }}"
-          echo "image-repo-tag = ${{ needs.ci.outputs.image-repo-tag }}"
-          echo "image-tag      = ${{ needs.ci.outputs.image-tag }}"
-
+      # ECR registry 주소 + image-repo-tag 조합으로 전체 URI 완성
       - name: Render new task definition with updated image
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: ${{ env.TASK_DEFINITION }}
           container-name:  ${{ env.CONTAINER_NAME }}
-          image:           ${{ needs.ci.outputs.image-uri }}
+          image:           ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ needs.ci.outputs.image-repo-tag }}
 
       - name: Deploy to ECS (Rolling Update)
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
@@ -156,7 +139,7 @@ jobs:
         run: |
           echo "=============================="
           echo " 배포 완료"
-          echo " 이미지: ${{ needs.ci.outputs.image-uri }}"
+          echo " 이미지: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ needs.ci.outputs.image-repo-tag }}"
           echo " 클러스터: ${{ env.ECS_CLUSTER }}"
           echo " 서비스: ${{ env.ECS_SERVICE }}"
           echo "=============================="
