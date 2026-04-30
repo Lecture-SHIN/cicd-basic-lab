@@ -14,16 +14,16 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write    # OIDC JWT 토큰 발급
+  id-token: write
   contents: read
 
 env:
   AWS_REGION: ap-northeast-2
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}    # mylab-backend
-  ECS_CLUSTER:    ${{ vars.ECS_CLUSTER }}    # mylab-cluster
-  ECS_SERVICE:    ${{ vars.ECS_SERVICE }}    # mylab-backend-service
-  CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}    # mylab-backend
-  TASK_DEFINITION: .aws/task-definition.json
+  ECS_CLUSTER:    ${{ vars.ECS_CLUSTER }}        # mylab-cluster
+  ECS_SERVICE:    ${{ vars.ECS_SERVICE }}        # mylab-backend-service
+  CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}     # mylab-backend
+  TASK_DEFINITION: cicd-basic-lab/.aws/task-definition.json
 
 jobs:
 
@@ -54,7 +54,6 @@ jobs:
         run: mvn clean package -DskipTests -B
 
       # 4. OIDC 인증
-      #    변경점: DOCKERHUB_TOKEN 불필요 → AWS OIDC Role만 사용
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -63,14 +62,11 @@ jobs:
           role-session-name: GitHubActions-CI-${{ github.run_id }}
 
       # 5. ECR 로그인
-      #    변경점: docker/login-action (Docker Hub) → amazon-ecr-login (ECR)
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       # 6. Docker 빌드 + ECR Push
-      #    CICD2: {dockerhub_user}/cicd-basic-lab:{run_number}-{sha7}
-      #    현재:  {계정ID}.dkr.ecr.../mylab-backend:{run_number}-{sha7}
       - name: Build, tag and push image to ECR
         id: build-push
         working-directory: cicd-basic-lab
@@ -91,6 +87,62 @@ jobs:
 
           docker push ${IMAGE_URI}
 
-          # Job 2 (cd) 로 이미지 URI 전달
           echo "image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
           echo "image-tag=${TAG}"       >> $GITHUB_OUTPUT
+          echo "확인 - image-uri: ${IMAGE_URI}"
+
+
+  cd:
+    name: CD — Deploy to ECS
+    runs-on: ubuntu-latest
+    needs: ci
+
+    steps:
+      # 1. 코드 체크아웃
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. OIDC 인증
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-cicd-basic-lab-role
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-CD-${{ github.run_id }}
+
+      # 3. Task Definition ACCOUNT_ID 치환
+      - name: Inject Account ID into task definition
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          TASK_DEF_PATH=$(find $GITHUB_WORKSPACE -name "task-definition.json" | head -1)
+          echo "찾은 경로: ${TASK_DEF_PATH}"
+          sed -i "s/ACCOUNT_ID/${ACCOUNT_ID}/g" ${TASK_DEF_PATH}
+          echo "Task Definition ACCOUNT_ID 치환 완료: ${ACCOUNT_ID}"
+
+      # 4. Task Definition 이미지 URI 교체
+      - name: Render new task definition with updated image
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.TASK_DEFINITION }}
+          container-name:  ${{ env.CONTAINER_NAME }}
+          image:           ${{ needs.ci.outputs.image-uri }}
+
+      # 5. ECS Rolling Update 배포
+      - name: Deploy to ECS (Rolling Update)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service:  ${{ env.ECS_SERVICE }}
+          cluster:  ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      # 6. 배포 결과 출력
+      - name: Print deployment result
+        run: |
+          echo "=============================="
+          echo " 배포 완료"
+          echo " 이미지: ${{ needs.ci.outputs.image-uri }}"
+          echo " 클러스터: ${{ env.ECS_CLUSTER }}"
+          echo " 서비스: ${{ env.ECS_SERVICE }}"
+          echo "=============================="
