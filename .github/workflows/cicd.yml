@@ -27,7 +27,7 @@ env:
   ECS_CLUSTER:    ${{ vars.ECS_CLUSTER }}        # mylab-cluster
   ECS_SERVICE:    ${{ vars.ECS_SERVICE }}        # mylab-backend-service
   CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}     # mylab-backend
-  TASK_DEFINITION: cicd-basic-lab/.aws/task-definition.json    # git 루트 기준
+  TASK_DEFINITION: .aws/task-definition.json    # git 루트 기준
 
 jobs:
 
@@ -117,7 +117,7 @@ jobs:
       - name: Inject Account ID into task definition
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          sed -i "s/ACCOUNT_ID/${ACCOUNT_ID}/g" $GITHUB_WORKSPACE/${{ env.TASK_DEFINITION }}
+          sed -i "s/ACCOUNT_ID/${ACCOUNT_ID}/g" $GITHUB_WORKSPACE/.aws/task-definition.json
           echo "Task Definition ACCOUNT_ID 치환 완료: ${ACCOUNT_ID}"
 
       # 4. Task Definition 이미지 URI 교체
